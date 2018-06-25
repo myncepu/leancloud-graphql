@@ -209,32 +209,44 @@ module.exports = function buildSchema({appId, appKey, masterKey}) {
       };
     });
 
+    const mutationSchemas = _.mapValues(cloudSchemas, (schema, className) => {
+      return {
+        name: className,
+        type: classSchemas[className],
+        args: _.omitBy(classSchemasFieldsThunk[className](), value => {
+          return value.type instanceof GraphQLList || value.type instanceof GraphQLObjectType;
+        }),
+        resolve: (source, args, {authOptions}, info) => {
+          const saveOptions = _.extend({fetchWhenSave: true}, authOptions)
+
+          if (args.objectId) {
+            return AV.Object.createWithoutData(className, args.objectId).save(_.omit(args, 'objectId'), saveOptions);
+          } else {
+            return new classes[className]().save(args, saveOptions);
+          }
+        }
+      }
+    })
+
     return new GraphQLSchema({
       query: new GraphQLObjectType({
         name: 'LeanStorage',
-        fields: querySchemas
+        fields: {
+          ...querySchemas,
+          hello: {
+            type: GraphQLString,
+            resolve() {
+              return 'world';
+            }
+          },
+        }
       }),
 
       mutation: new GraphQLObjectType({
         name: 'LeanStorageMutation',
-        fields: _.mapValues(cloudSchemas, (schema, className) => {
-          return {
-            name: className,
-            type: classSchemas[className],
-            args: _.omitBy(classSchemasFieldsThunk[className](), value => {
-              return value.type instanceof GraphQLList || value.type instanceof GraphQLObjectType;
-            }),
-            resolve: (source, args, {authOptions}, info) => {
-              const saveOptions = _.extend({fetchWhenSave: true}, authOptions)
-
-              if (args.objectId) {
-                return AV.Object.createWithoutData(className, args.objectId).save(_.omit(args, 'objectId'), saveOptions);
-              } else {
-                return new classes[className]().save(args, saveOptions);
-              }
-            }
-          }
-        })
+        fields: {
+          ...mutationSchemas,
+        }
       })
     });
   });
@@ -248,13 +260,13 @@ function addArgumentsToQuery(query, args) {
   });
 
   ['equalTo', 'greaterThan', 'greaterThanOrEqualTo', 'lessThan',
-   'lessThanOrEqualTo', 'containedIn', 'containsAll'].forEach( method => {
-    if (_.isObject(args[method])) {
-      _.forEach(args[method], (value, key) => {
-        query[method](key, value);
-      });
-    }
-  });
+    'lessThanOrEqualTo', 'containedIn', 'containsAll'].forEach( method => {
+      if (_.isObject(args[method])) {
+        _.forEach(args[method], (value, key) => {
+          query[method](key, value);
+        });
+      }
+    });
 
   if (_.isObject(args.exists)) {
     _.forEach(args.exists, (value, key) => {
